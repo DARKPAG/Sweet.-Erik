@@ -1,0 +1,276 @@
+        <!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sweet Erik</title>
+  <style>
+    body {
+      background: linear-gradient(to bottom, #8ee, #dff);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: sans-serif;
+      padding-top: 20px;
+    }
+    h1 { color: #444; }
+    #game-board {
+      display: grid;
+      grid-template-columns: repeat(6, 60px);
+      grid-template-rows: repeat(5, 60px);
+      gap: 5px;
+      margin-top: 20px;
+    }
+    .tile {
+      width: 60px;
+      height: 60px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      cursor: pointer;
+      background-color: #fff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      user-select: none;
+      transition: transform 0.2s, opacity 0.3s;
+    }
+    .pop {
+      animation: pop 0.3s forwards;
+    }
+    @keyframes pop {
+      to {
+        transform: scale(0);
+        opacity: 0;
+      }
+    }
+    #score {
+      margin-top: 15px;
+      font-size: 18px;
+    }
+    #controls {
+      margin-top: 15px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button, select {
+      padding: 8px 12px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      background-color: #4caf50;
+      color: white;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sweet Erik 🍇</h1>
+  <div id="score">Skor: 0</div>
+  <div id="controls">
+    <select id="bet">
+      <option value="10">Bahis: 10</option>
+      <option value="20">Bahis: 20</option>
+      <option value="50">Bahis: 50</option>
+    </select>
+    <button onclick="startGame()">🎰 Spin</button>
+    <button onclick="resetScore()">🔄 Sıfırla</button>
+    <button onclick="toggleFullscreen()">🖥️ Tam Ekran</button>
+    <button onclick="toggleTheme()">🎨 Tema</button>
+    <button onclick="toggleAutoSpin()">⚙️ Auto</button>
+  </div>
+  <div id="game-board"></div>
+  <audio id="pop-sound" src="https://cdn.pixabay.com/audio/2022/03/15/audio_d9e8c0ba5b.mp3"></audio>
+  <audio id="bg-music" src="https://cdn.pixabay.com/audio/2022/10/27/audio_6c7b4f0e0d.mp3" loop></audio>
+  <script>
+    const symbols = ['🍇', '🍓', '🍈', '🍒', '🍑', '🍍', '🍭'];
+    const board = document.getElementById('game-board');
+    const scoreBoard = document.getElementById('score');
+    const betSelector = document.getElementById('bet');
+    const popSound = document.getElementById('pop-sound');
+    const bgMusic = document.getElementById('bg-music');let grid = [];
+let score = parseInt(localStorage.getItem('score')) || 0;
+let freeSpins = parseInt(localStorage.getItem('freeSpins')) || 0;
+let autoSpin = false;
+let theme = 'light';
+const cols = 6;
+const rows = 5;
+
+function generateTile() {
+  return symbols[Math.floor(Math.random() * symbols.length)];
+}
+
+function updateScore(points) {
+  score += points;
+  scoreBoard.innerText = `Skor: ${score}${freeSpins > 0 ? ' | Free Spins: ' + freeSpins : ''}`;
+  localStorage.setItem('score', score);
+  localStorage.setItem('freeSpins', freeSpins);
+}
+
+function resetScore() {
+  score = 0;
+  freeSpins = 0;
+  updateScore(0);
+}
+
+function createBoard() {
+  grid = [];
+  board.innerHTML = '';
+  for (let i = 0; i < cols * rows; i++) {
+    const symbol = generateTile();
+    grid.push(symbol);
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    tile.innerText = symbol;
+    tile.dataset.index = i;
+    board.appendChild(tile);
+  }
+}
+
+function getMatches() {
+  const counts = {};
+  grid.forEach((sym, i) => {
+    if (!counts[sym]) counts[sym] = [];
+    counts[sym].push(i);
+  });
+  const matches = [];
+  Object.values(counts).forEach(arr => {
+    if (arr.length >= 8 && arr[0] !== '🍭') matches.push(...arr);
+  });
+  return [...new Set(matches)];
+}
+
+function removeMatches(matches) {
+  matches.forEach(i => {
+    const tile = board.children[i];
+    tile.classList.add('pop');
+  });
+  popSound.play();
+  setTimeout(() => {
+    matches.forEach(i => {
+      grid[i] = null;
+    });
+    refillBoard();
+    updateScore(matches.length * parseInt(betSelector.value));
+  }, 300);
+}
+
+function refillBoard() {
+  for (let i = grid.length - 1; i >= 0; i--) {
+    if (grid[i] === null) {
+      for (let j = i - cols; j >= 0; j -= cols) {
+        if (grid[j] !== null) {
+          grid[i] = grid[j];
+          grid[j] = null;
+          break;
+        }
+      }
+      if (grid[i] === null) {
+        grid[i] = generateTile();
+      }
+    }
+  }
+  renderBoard();
+  setTimeout(() => {
+    checkAndRemoveMatches();
+    checkFreeSpinTrigger();
+    maybeAddMultiplier();
+    if (autoSpin) setTimeout(startGame, 1000);
+  }, 500);
+}
+
+function renderBoard() {
+  [...board.children].forEach((tile, i) => {
+    tile.className = 'tile';
+    tile.innerText = grid[i];
+  });
+}
+
+function checkAndRemoveMatches() {
+  const matches = getMatches();
+  if (matches.length > 0) {
+    removeMatches(matches);
+  }
+}
+
+function checkFreeSpinTrigger() {
+  const lolipops = grid.filter(g => g === '🍭');
+  if (lolipops.length >= 4) {
+    freeSpins += 10;
+    alert("10 Free Spin kazandın! 🍭");
+    updateScore(0);
+  }
+}
+
+function maybeAddMultiplier() {
+  const chance = Math.random();
+  if (chance < 0.2) {
+    const multiplier = Math.floor(Math.random() * 10 + 2);
+    alert(`🎯 Çarpan geldi! Kazancın x${multiplier}`);
+    updateScore(score * (multiplier - 1));
+  }
+}
+
+function startGame() {
+  if (freeSpins > 0) {
+    freeSpins--;
+    createBoard();
+    setTimeout(() => {
+      checkAndRemoveMatches();
+      checkFreeSpinTrigger();
+      maybeAddMultiplier();
+    }, 1000);
+  } else {
+    const bet = parseInt(betSelector.value);
+    if (score >= bet) {
+      score -= bet;
+      updateScore(0);
+      createBoard();
+      setTimeout(() => {
+        checkAndRemoveMatches();
+        checkFreeSpinTrigger();
+        maybeAddMultiplier();
+      }, 1000);
+    } else {
+      alert("Yetersiz bakiye!");
+    }
+  }
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+function toggleTheme() {
+  if (theme === 'light') {
+    document.body.style.background = '#222';
+    document.body.style.color = '#fff';
+    theme = 'dark';
+  } else {
+    document.body.style.background = 'linear-gradient(to bottom, #8ee, #dff)';
+    document.body.style.color = '#000';
+    theme = 'light';
+  }
+}
+
+function toggleAutoSpin() {
+  autoSpin = !autoSpin;
+  if (autoSpin) startGame();
+}
+
+updateScore(0);
+createBoard();
+bgMusic.volume = 0.3;
+bgMusic.play();
+
+  </script>
+</body>
+</html>
